@@ -33,20 +33,24 @@ def fisher(df, norm_window=20):
     return 0.5 * df_fisher + 0.5 * df_fisher.shift()
 
 
-def fisher_inverse(df, norm_window=20):
+def fisher_inverse(df, norm_window=20, normalization='statistical'):
     """
     Inverse Fisher transform.
-     TODO: try with normalization  multiplied by 4
     :param df:
     :param norm_window:
     :return:
+    :normalization: ('chanelling' or 'statistical')
     """
-    # Normalize the price series.
-    df_norm = (df - pd.rolling_min(df, norm_window)) / \
-              (pd.rolling_max(df, norm_window) - pd.rolling_min(df, norm_window))
-    # Center the series on its midpoint and then doubled so that df_value
-    # swings between −1 and +1.
-    df_value = 2 * (df_norm - 0.5)
+    # Normalize the price serie.
+    if normalization == 'channelling':
+        df_norm = (df - pd.rolling_min(df, norm_window)) / \
+                  (pd.rolling_max(df, norm_window) - pd.rolling_min(df, norm_window))
+        # Center the serie on its midpoint and then doubled so that df_value
+        # swings between −1 and +1.
+        df_value = 2 * (df_norm - 0.5)
+    elif normalization == 'statistical':
+        df_value = 2 * (df - pd.rolling_mean(df, norm_window)) / \
+                   pd.rolling_std(df, norm_window)
     # Avoid division by zero and weird behavior.
     df_value[df_value < -0.999] = -0.999
     df_value[df_value > 0.999] = 0.999
@@ -63,7 +67,7 @@ def cyber_cycle(na_series, period):
     :return: a numpy array with the series filtered.
     """
     alpha = 2.0 / (period + 1)       # 0.07
-    a_ = (alpha / 2.0) ** 2
+    a_ = (1 - alpha / 2.0) ** 2
     b_ = (1 - alpha)
 
     smooth = np.zeros(len(na_series))
@@ -149,7 +153,7 @@ def decycle(na_series, period):
     return dcycle
 
 
-def high_pass_filter(na_series, period, initialize_filter=True):
+def high_pass_filter(na_series, period, initialize_filter=False):
     """
     High-pass filter with cutoff frequency equal to period.
     --> Ref: Cybernetics, eq. 2.6
@@ -187,3 +191,29 @@ def roofing_indicator(na_series, short_period, long_period):
     hpf = high_pass_filter(na_series, long_period, initialize_filter=False)
     ss = super_smoother(hpf, short_period, initialize_filter=False)
     return ss
+
+
+def sinewave_indicator(na_series, period, smoothing=10):
+    # Modified high pass filter
+    alpha = (1 - np.sin(2 * pi / period)) / np.cos(2 * pi / period)
+    a_ = 0.5 * (1 + alpha)
+    hpf = np.zeros(len(na_series))
+    for n in range(1, len(na_series)):
+        hpf[n] = a_ * (na_series[n] - na_series[n - 1]) + alpha * hpf[n - 1]
+    si = pd.rolling_sum(super_smoother(hpf, smoothing), 3)
+    return si / np.abs(si)
+
+
+def band_pass_filter(na_series, period):
+    delta = 0.3                                          # Bandwidth
+    gamma = np.cos(2 * pi * delta / period)              # gamma1^-1 (ok)
+    sigma = 1.0 / gamma - (1.0 / gamma ** 2 - 1) ** 0.5  # alpha1    (ok)
+    lambda_ = np.cos(2 * pi / period)                    # beta1     (ok)
+    
+    n1 = 0.5 * (1 - sigma)
+    d1 = lambda_ * (1 + sigma)
+    bpf = np.zeros(len(na_series))
+    for n in range(2, len(na_series)):
+        bpf[n] = n1 * (na_series[n] - na_series[n - 2]) - \
+                 d1 * bpf[n - 1] + sigma * bpf[n - 2]
+    return bpf
