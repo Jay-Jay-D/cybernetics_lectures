@@ -39,17 +39,17 @@ def fisher_inverse(df, norm_window=20, normalization='statistical'):
     :param df:
     :param norm_window:
     :return:
-    :normalization: ('chanelling' or 'statistical')
+    :normalization: ('channeling' or 'statistical')
     """
     # Normalize the price serie.
-    if normalization == 'channelling':
+    if normalization == 'channeling':
         df_norm = (df - pd.rolling_min(df, norm_window)) / \
                   (pd.rolling_max(df, norm_window) - pd.rolling_min(df, norm_window))
         # Center the serie on its midpoint and then doubled so that df_value
         # swings between −1 and +1.
         df_value = 2 * (df_norm - 0.5)
     elif normalization == 'statistical':
-        df_value = 2 * (df - pd.rolling_mean(df, norm_window)) / \
+        df_value = (df - pd.rolling_mean(df, norm_window)) / \
                    pd.rolling_std(df, norm_window)
     # Avoid division by zero and weird behavior.
     df_value[df_value < -0.999] = -0.999
@@ -92,7 +92,7 @@ def instantaneous_trend(na_series, period):
     :param period: the SMA equivalent period.
     :return: a numpy array with the series filtered.
     """
-    alpha = 2.0 / (period + 1)       # 0.07
+    alpha = 2.0 / (period + 1)       
     a_ = (alpha / 2.0) ** 2
     b_ = (1 - alpha)
 
@@ -100,9 +100,12 @@ def instantaneous_trend(na_series, period):
     it[:2] = na_series[:2]
 
     for n in range(2, len(na_series)):
-        it[n] = (alpha - a_) * na_series[n] + (2 * a_) * na_series[n-1] - \
-                (alpha - 3 * a_) * na_series[n-2] + \
-                (2 * b_) * it[n-1] - (b_ ** 2) * it[n-2]
+        if n < 7:
+            it[n] = (na_series[n] + 2 * na_series[n-1] + na_series[n-2]) / 4
+        else:
+            it[n] = (alpha - a_) * na_series[n] + (2 * a_) * na_series[n-1] - \
+                    (alpha - 3 * a_) * na_series[n-2] + \
+                    (2 * b_) * it[n-1] - (b_ ** 2) * it[n-2]
     return it
 
 
@@ -117,7 +120,7 @@ def super_smoother(na_series, period, initialize_filter=True):
     :param initialize_filter: (boolean) Initialize the first filter values with the input series? 
                               Set True for faster trend convergence.
                               Set False for use with oscilators.
-    :return: a numpy array with the series filtered.
+    :return: a numpy array with the filtered series.
     """
     a = np.exp(-1.414 * pi / period)
     b = 2 * a * np.cos(1.414 * pi / period)
@@ -153,26 +156,21 @@ def decycle(na_series, period):
     return dcycle
 
 
-def high_pass_filter(na_series, period, initialize_filter=False):
+def high_pass_filter(na_series, period):
     """
     High-pass filter with cutoff frequency equal to period.
     --> Ref: Cybernetics, eq. 2.6
     :param na_series: numpy array with the series to be filtered.
     :param period: the period of the cutoff frequency.
     :return: a numpy array with the series filtered.
-    :param initialize_filter: (boolean) Initialize the first filter values with the input series? 
-                              Set True for faster trend convergence.
-                              Set False for use with oscilators.
     """
     alpha = (np.cos(2 * pi / period) + np.sin(2 * pi / period) - 1) / np.cos(2 * pi / period)
     a_ = (1 - alpha / 2) ** 2
     b_ = 1 - alpha
 
     hpf = np.zeros(len(na_series))
-    if initialize_filter:
-        hpf[:2] = na_series[:2]
-
-    for n in range(2, len(na_series)):
+    
+    for n in range(3, len(na_series)):
         hpf[n] = a_ * (na_series[n] - 2 * na_series[n - 1] + na_series[n - 2]) + \
                  2 * b_ * hpf[n - 1] - (b_ ** 2) * hpf[n - 2]
     return hpf
